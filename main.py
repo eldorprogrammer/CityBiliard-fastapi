@@ -14,7 +14,7 @@ app = FastAPI()
 
 # MongoDB Client
 try:
-    client = MongoClient(MONGODB_URI, server_selection_timeout_ms=5000)
+    client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
     # Test the connection
     client.admin.command('ping')
     logger.info("Successfully connected to MongoDB")
@@ -122,7 +122,3 @@ def shutdown_event():
     client.close()
     logger.info("MongoDB connection closed")
 
-# Serverni ishga tushirish
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
