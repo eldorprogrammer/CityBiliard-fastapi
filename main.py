@@ -4,7 +4,7 @@ from pydantic import BaseModel
 import logging
 from datetime import datetime
 from pymongo import MongoClient
-from config import MONGODB_URI  # MongoDB connection string from config
+from config import MONGODB_URI
 
 # Logging sozlamalari
 logging.basicConfig(level=logging.INFO)
@@ -31,10 +31,10 @@ except Exception as e:
     logger.error(f"Failed to connect to MongoDB: {e}")
     raise
 
-db = client["billiard_db"]  # Database name
-collection = db["game_stats"]  # Collection name
+db = client["billiard_db"]
+collection = db["game_stats"]
 
-# Pydantic Model (Ma'lumot validatsiyasi uchun)
+# Pydantic Model
 class GameUpdate(BaseModel):
     table_num: int
     start_time: str
@@ -116,8 +116,9 @@ async def hello():
         "message": "Nima gap",
         "status": "ok"
     }
-import os
+
 # MongoDB ulanishini yopish
+import os
 @app.on_event("shutdown")
 def shutdown_event():
     client.close()
