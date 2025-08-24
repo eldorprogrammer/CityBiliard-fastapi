@@ -137,19 +137,13 @@
 
 
 
-
-
-
-
-
-from fastapi import FastAPI, HTTPException, APIRouter, Depends
+from fastapi import FastAPI, HTTPException, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import logging
 from datetime import datetime
 from pymongo import MongoClient
-from config import MONGODB_URI, API_TOKEN
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from config import MONGODB_URI
 
 # Logging sozlamalari
 logging.basicConfig(level=logging.INFO)
@@ -157,7 +151,7 @@ logger = logging.getLogger(__name__)
 
 # FastAPI va Router
 app = FastAPI()
-router = APIRouter(trailing_slash=False)  # Redirect muammosini oldini olish uchun
+router = APIRouter()  # trailing_slash parametri olib tashlangan
 app.include_router(router)
 
 # CORS sozlamalari
@@ -166,7 +160,7 @@ app.add_middleware(
     allow_origins=["*"],  # Ishlab chiqarishda aniq domenlarni ko‘rsating
     allow_credentials=True,
     allow_methods=["POST", "GET", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type"],
 )
 
 # MongoDB Client (sinxron)
@@ -180,9 +174,6 @@ except Exception as e:
 
 db = client["billiard_db"]
 collection = db["game_stats"]
-
-# Autentifikatsiya
-security = HTTPBearer()
 
 # Pydantic Model
 class GameUpdate(BaseModel):
@@ -226,10 +217,7 @@ def update_data(table_num: int, duration: int):
 
 # API Endpoint: /update_stats
 @router.post("/update_stats")
-def update_stats_api(game_update: GameUpdate, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    if credentials.credentials != API_TOKEN:
-        raise HTTPException(status_code=401, detail="Noto'g'ri token")
-    
+def update_stats_api(game_update: GameUpdate):
     try:
         table_num = game_update.table_num
         start_time_str = game_update.start_time
