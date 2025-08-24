@@ -6,8 +6,3 @@ MONGODB_URI = os.getenv("MONGO_PUBLIC_URL", "mongodb://mongo:wSUPTtKQyhVoPQaAScU
 
 
 
-
-
-
-
-
