@@ -138,8 +138,6 @@
 
 
 
-
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -155,21 +153,21 @@ from config import MONGODB_URI  # config.py dan faqat MONGODB_URI ni import qila
 NUM_TABLES = 7  # Jadval raqamlari soni
 DURATION_TOLERANCE = 2  # Daqiqalarda ruxsat etilgan farq
 
-# CORS uchun ruxsat berilgan domenlar (config.py o‘rniga bu yerda aniqlaymiz)
+# CORS uchun ruxsat berilgan domenlar
 ALLOWED_ORIGINS = [
     "http://localhost:3000",  # Frontend ilovasi (masalan, React)
-    "http://localhost:8000",  # API serveri
+    "http://localhost:8080",  # API serveri (port 8080)
     # Ishlab chiqarish domenini qo‘shing: "https://your-production-domain.com"
 ]
 
-# Log sozlamalari
-logging.basicConfig(level=logging.INFO)
+# Log sozlamalari (batafsil loglar uchun debug darajasi)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # FastAPI ilovasini yaratish
 app = FastAPI()
 
-# CORS sozlamalari (xavfsizlik uchun faqat ruxsat berilgan domenlar)
+# CORS sozlamalari
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -202,6 +200,7 @@ class GameUpdate(BaseModel):
 def update_data(table_num: int, duration: int):
     try:
         today = datetime.now().strftime('%Y-%m-%d')  # Bugungi sana
+        logger.debug(f"Bugungi sana: {today}")
         existing_entry = collection.find_one({"date": today})
 
         if existing_entry:
@@ -243,6 +242,7 @@ def update_data(table_num: int, duration: int):
 @app.post("/update_stats")
 async def update_stats_api(game_update: GameUpdate):
     try:
+        logger.debug(f"So'rov keldi: {game_update}")
         table_num = game_update.table_num
         start_time_str = game_update.start_time
         end_time_str = game_update.end_time
@@ -252,6 +252,7 @@ async def update_stats_api(game_update: GameUpdate):
         try:
             start_time = datetime.strptime(start_time_str, '%Y-%m-%d %H:%M')
             end_time = datetime.strptime(end_time_str, '%Y-%m-%d %H:%M')
+            logger.debug(f"Sana tahlil qilindi: start_time={start_time}, end_time={end_time}")
         except ValueError:
             logger.error(f"Noto'g'ri sana formati: {start_time_str} yoki {end_time_str}")
             raise HTTPException(status_code=400, detail="Sana formati 'YYYY-MM-DD HH:MM' bo'lishi kerak")
@@ -273,7 +274,6 @@ async def update_stats_api(game_update: GameUpdate):
 
         update_data(table_num, duration_seconds)
         logger.info(f"table_{table_num} {duration_seconds} soniya bilan muvaffaqiyatli yangilandi")
-
         return {"status": "success", "message": f"table_{table_num} {duration_seconds} soniya bilan yangilandi"}
     except HTTPException:
         raise
@@ -304,12 +304,12 @@ def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
-    port = os.getenv("PORT", "8000")
+    port = os.getenv("PORT", "8080")  # Sukut bo'yicha 8080 port
     try:
         port = int(port)
         if not 1 <= port <= 65535:
             raise ValueError("Port 1 dan 65535 gacha bo'lishi kerak")
     except ValueError as e:
         logger.error(f"Noto'g'ri port qiymati: {e}")
-        port = 8000  # Sukut bo'yicha port
+        port = 8080  # Sukut bo'yicha port
     uvicorn.run(app, host="0.0.0.0", port=port)
