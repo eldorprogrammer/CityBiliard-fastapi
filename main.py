@@ -132,35 +132,38 @@
 
 
 
-
-
-from fastapi import FastAPI, HTTPException, APIRouter
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import logging
 from datetime import datetime
 from pymongo import MongoClient
-from config import MONGODB_URI
+from dateutil import parser
+from tenacity import retry, stop_after_attempt, wait_fixed
+import os
+from config import MONGODB_URI, ALLOWED_ORIGINS
 
-# Logging sozlamalari
+# Constants
+NUM_TABLES = 7
+DURATION_TOLERANCE = 2  # minutes
+
+# Logging configuration
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# FastAPI va Router
+# FastAPI
 app = FastAPI()
-router = APIRouter()
-app.include_router(router)
 
-# CORS sozlamalari
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Ishlab chiqarishda aniq domenlarni ko‘rsating
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["POST", "GET", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# MongoDB Client (sinxron)
+# MongoDB Client
 try:
     client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
     client.admin.command('ping')
@@ -179,13 +182,13 @@ class GameUpdate(BaseModel):
     end_time: str
     duration_minutes: int
 
-# Ma'lumotlarni MongoDB dan o'qish va yangilash funksiyasi (sinxron)
+# Update data in MongoDB with retry
+@retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
 def update_data(table_num: int, duration: int):
     try:
         today = datetime.now().strftime('%Y-%m-%d')
-        
         existing_entry = collection.find_one({"date": today})
-        
+
         if existing_entry:
             if f"table_{table_num}" in existing_entry["tables"]:
                 collection.update_one(
@@ -202,35 +205,38 @@ def update_data(table_num: int, duration: int):
         else:
             new_entry = {
                 "date": today,
-                "tables": {f"table_{i}": {"total_time": 0} for i in range(1, 8)}
+                "tables": {f"table_{i}": {"total_time": 0} for i in range(1, NUM_TABLES + 1)}
             }
             new_entry["tables"][f"table_{table_num}"]["total_time"] = duration
             collection.insert_one(new_entry)
             logger.info(f"Added new entry for {today} with table_{table_num}")
-
     except Exception as e:
         logger.error(f"Error updating data in MongoDB: {e}")
         raise
 
 # API Endpoint: /update_stats
-@router.post("/update_stats")
-def update_stats_api(game_update: GameUpdate):
+@app.post("/update_stats")
+async def update_stats_api(game_update: GameUpdate):
     try:
         table_num = game_update.table_num
         start_time_str = game_update.start_time
         end_time_str = game_update.end_time
         duration_minutes = game_update.duration_minutes
 
-        start_time = datetime.strptime(start_time_str, '%Y-%m-%d %H:%M')
-        end_time = datetime.strptime(end_time_str, '%Y-%m-%d %H:%M')
+        # Parse dates flexibly
+        start_time = parser.parse(start_time_str)
+        end_time = parser.parse(end_time_str)
         calculated_duration = int((end_time - start_time).total_seconds() / 60)
-        if abs(calculated_duration - duration_minutes) > 1:
+
+        # Validate duration
+        if abs(calculated_duration - duration_minutes) > DURATION_TOLERANCE:
             logger.warning(f"Duration mismatch: reported {duration_minutes} min, calculated {calculated_duration} min")
             raise HTTPException(status_code=400, detail="Duration mismatch")
 
-        if not 1 <= table_num <= 7:
+        # Validate table number
+        if not 1 <= table_num <= NUM_TABLES:
             logger.error(f"Invalid table_num: {table_num}")
-            raise HTTPException(status_code=400, detail="Table number must be between 1 and 7")
+            raise HTTPException(status_code=400, detail=f"Table number must be between 1 and {NUM_TABLES}")
 
         duration_seconds = duration_minutes * 60
         if duration_seconds <= 0:
@@ -248,21 +254,24 @@ def update_stats_api(game_update: GameUpdate):
         raise HTTPException(status_code=500, detail=str(e))
 
 # API Endpoint: /
-@router.get("/")
-def hello():
-    return {
-        "message": "Nima gap",
-        "status": "ok"
-    }
+@app.get("/")
+async def hello():
+    return {"message": "Nima gap", "status": "ok"}
 
-# MongoDB ulanishini yopish
-import os
-@router.on_event("shutdown")
+# Shutdown event
+@app.on_event("shutdown")
 def shutdown_event():
     client.close()
     logger.info("MongoDB connection closed")
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8080))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    port = os.getenv("PORT", "8000")
+    try:
+        port = int(port)
+        if not 1 <= port <= 65535:
+            raise ValueError("Port must be between 1 and 65535")
+    except ValueError as e:
+        logger.error(f"Invalid port value: {e}")
+        port = 8000
+    uvicorn.run(app, host="0.0.0.0", port=port)
