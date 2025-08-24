@@ -141,7 +141,6 @@
 
 
 
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -149,12 +148,11 @@ import logging
 from datetime import datetime
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, WriteError
-from dateutil import parser  # Sana formatini moslashuvchan qilish uchun
 from tenacity import retry, stop_after_attempt, wait_fixed
 import os
 from config import MONGODB_URI, ALLOWED_ORIGINS  # config.py dan MONGODB_URI va ruxsat berilgan domenlar
 
-# Doimiy o'zgaruvchilar
+# Doimiy o‘zgaruvchilar
 NUM_TABLES = 7  # Jadval raqamlari soni
 DURATION_TOLERANCE = 2  # Daqiqalarda ruxsat etilgan farq
 
@@ -189,8 +187,8 @@ collection = db["game_stats"]  # To'plam nomi
 # Pydantic Model (ma'lumotlarni validatsiya qilish uchun)
 class GameUpdate(BaseModel):
     table_num: int  # Jadval raqami
-    start_time: str  # Boshlanish vaqti
-    end_time: str  # Tugash vaqti
+    start_time: str  # Boshlanish vaqti (YYYY-MM-DD HH:MM)
+    end_time: str  # Tugash vaqti (YYYY-MM-DD HH:MM)
     duration_minutes: int  # Davomiylik (daqiqalarda)
 
 # Ma'lumotlarni MongoDB ga yangilash funksiyasi (qayta urinish bilan)
@@ -244,12 +242,16 @@ async def update_stats_api(game_update: GameUpdate):
         end_time_str = game_update.end_time
         duration_minutes = game_update.duration_minutes
 
-        # Sana formatini moslashuvchan tarzda o'qish
-        start_time = parser.parse(start_time_str)
-        end_time = parser.parse(end_time_str)
-        calculated_duration = int((end_time - start_time).total_seconds() / 60)
+        # Sana formatini qattiq tekshirish (YYYY-MM-DD HH:MM)
+        try:
+            start_time = datetime.strptime(start_time_str, '%Y-%m-%d %H:%M')
+            end_time = datetime.strptime(end_time_str, '%Y-%m-%d %H:%M')
+        except ValueError:
+            logger.error(f"Noto'g'ri sana formati: {start_time_str} yoki {end_time_str}")
+            raise HTTPException(status_code=400, detail="Sana formati 'YYYY-MM-DD HH:MM' bo'lishi kerak")
 
         # Davomiylikni tekshirish
+        calculated_duration = int((end_time - start_time).total_seconds() / 60)
         if abs(calculated_duration - duration_minutes) > DURATION_TOLERANCE:
             logger.warning(f"Davomiylik mos kelmadi: kiritilgan {duration_minutes} min, hisoblangan {calculated_duration} min")
             raise HTTPException(status_code=400, detail="Davomiylik mos kelmaydi")
@@ -267,9 +269,8 @@ async def update_stats_api(game_update: GameUpdate):
         logger.info(f"table_{table_num} {duration_seconds} soniya bilan muvaffaqiyatli yangilandi")
 
         return {"status": "success", "message": f"table_{table_num} {duration_seconds} soniya bilan yangilandi"}
-    except ValueError as e:
-        logger.error(f"Noto'g'ri sana formati: {e}")
-        raise HTTPException(status_code=400, detail="Noto'g'ri sana formati")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"update_stats_api da xatolik: {e}")
         raise HTTPException(status_code=500, detail=str(e))
