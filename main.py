@@ -140,7 +140,6 @@
 
 
 
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -150,11 +149,18 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, WriteError
 from tenacity import retry, stop_after_attempt, wait_fixed
 import os
-from config import MONGODB_URI, ALLOWED_ORIGINS  # config.py dan MONGODB_URI va ruxsat berilgan domenlar
+from config import MONGODB_URI  # config.py dan faqat MONGODB_URI ni import qilamiz
 
 # Doimiy o‘zgaruvchilar
 NUM_TABLES = 7  # Jadval raqamlari soni
 DURATION_TOLERANCE = 2  # Daqiqalarda ruxsat etilgan farq
+
+# CORS uchun ruxsat berilgan domenlar (config.py o‘rniga bu yerda aniqlaymiz)
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # Frontend ilovasi (masalan, React)
+    "http://localhost:8000",  # API serveri
+    # Ishlab chiqarish domenini qo‘shing: "https://your-production-domain.com"
+]
 
 # Log sozlamalari
 logging.basicConfig(level=logging.INFO)
@@ -166,7 +172,7 @@ app = FastAPI()
 # CORS sozlamalari (xavfsizlik uchun faqat ruxsat berilgan domenlar)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,  # config.py da aniqlangan domenlar
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
