@@ -136,7 +136,6 @@
 
 
 
-
 from fastapi import FastAPI, HTTPException, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -151,7 +150,7 @@ logger = logging.getLogger(__name__)
 
 # FastAPI va Router
 app = FastAPI()
-router = APIRouter()  # trailing_slash parametri olib tashlangan
+router = APIRouter()  # trailing_slash olib tashlangan
 app.include_router(router)
 
 # CORS sozlamalari
@@ -267,5 +266,5 @@ def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 8080))  # Railway uchun 8080 portiga o'zgartirildi
     uvicorn.run("main:app", host="0.0.0.0", port=port)
