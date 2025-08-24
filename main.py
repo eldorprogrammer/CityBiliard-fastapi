@@ -134,8 +134,6 @@
 
 
 
-
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -154,8 +152,8 @@ DURATION_TOLERANCE = 2  # Daqiqalarda ruxsat etilgan farq
 # CORS uchun ruxsat berilgan domenlar
 ALLOWED_ORIGINS = [
     "http://localhost:3000",  # Frontend ilovasi (masalan, React)
-    "http://localhost:8000",  # API serveri (port 8000)
-    "https://your-app.railway.app"  # Railway domenini qo‘shing
+    "http://localhost:8080",  # Mahalliy server (test uchun)
+    "https://your-app.railway.app"  # Railway domenini o‘zingizning domeningiz bilan almashtiring
 ]
 
 # Log sozlamalari (batafsil loglar uchun debug darajasi)
@@ -302,12 +300,12 @@ def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
-    port = os.getenv("PORT", "8000")  # Sukut bo'yicha 8000 port
+    port = os.getenv("PORT", "8080")  # Sukut bo'yicha 8080 port
     try:
         port = int(port)
         if not 1 <= port <= 65535:
             raise ValueError("Port 1 dan 65535 gacha bo'lishi kerak")
     except ValueError as e:
         logger.error(f"Noto'g'ri port qiymati: {e}")
-        port = 8000  # Sukut bo'yicha port
+        port = 8080  # Sukut bo'yicha port
     uvicorn.run(app, host="0.0.0.0", port=port)
