@@ -143,15 +143,16 @@
 
 
 
-
-
-from fastapi import FastAPI, HTTPException, APIRouter
+from fastapi import FastAPI, HTTPException, APIRouter, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel 
+import uvicorn
+import os
 import logging
 from datetime import datetime
-from pymongo import MongoClient
-from config import MONGODB_URI
+from motor.motor_asyncio import AsyncIOMotorClient
+from config import MONGODB_URI, API_TOKEN
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 # Logging sozlamalari
 logging.basicConfig(level=logging.INFO)
@@ -171,17 +172,18 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
-# MongoDB Client
+# MongoDB Client (asinxron)
 try:
-    client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
-    client.admin.command('ping')
+    client = AsyncIOMotorClient(MONGODB_URI)
+    db = client["billiard_db"]
+    collection = db["game_stats"]
     logger.info("Successfully connected to MongoDB")
 except Exception as e:
     logger.error(f"Failed to connect to MongoDB: {e}")
     raise
 
-db = client["billiard_db"]
-collection = db["game_stats"]
+# Autentifikatsiya
+security = HTTPBearer()
 
 # Pydantic Model
 class GameUpdate(BaseModel):
@@ -190,22 +192,22 @@ class GameUpdate(BaseModel):
     end_time: str
     duration_minutes: int
 
-# Ma'lumotlarni MongoDB dan o'qish va yangilash funksiyasi
-def update_data(table_num: int, duration: int):
+# Ma'lumotlarni MongoDB dan o'qish va yangilash funksiyasi (asinxron)
+async def update_data(table_num: int, duration: int):
     try:
         today = datetime.now().strftime('%Y-%m-%d')
         
-        existing_entry = collection.find_one({"date": today})
+        existing_entry = await collection.find_one({"date": today})
         
         if existing_entry:
             if f"table_{table_num}" in existing_entry["tables"]:
-                collection.update_one(
+                await collection.update_one(
                     {"date": today},
                     {"$inc": {f"tables.table_{table_num}.total_time": duration}}
                 )
                 logger.info(f"Added {duration} seconds to existing table_{table_num}")
             else:
-                collection.update_one(
+                await collection.update_one(
                     {"date": today},
                     {"$set": {f"tables.table_{table_num}": {"total_time": duration}}}
                 )
@@ -216,7 +218,7 @@ def update_data(table_num: int, duration: int):
                 "tables": {f"table_{i}": {"total_time": 0} for i in range(1, 8)}
             }
             new_entry["tables"][f"table_{table_num}"]["total_time"] = duration
-            collection.insert_one(new_entry)
+            await collection.insert_one(new_entry)
             logger.info(f"Added new entry for {today} with table_{table_num}")
 
     except Exception as e:
@@ -225,7 +227,10 @@ def update_data(table_num: int, duration: int):
 
 # API Endpoint: /update_stats
 @router.post("/update_stats")
-async def update_stats_api(game_update: GameUpdate):
+async def update_stats_api(game_update: GameUpdate, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if credentials.credentials != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Noto'g'ri token")
+    
     try:
         table_num = game_update.table_num
         start_time_str = game_update.start_time
@@ -247,7 +252,7 @@ async def update_stats_api(game_update: GameUpdate):
         if duration_seconds <= 0:
             raise HTTPException(status_code=400, detail="Invalid duration")
 
-        update_data(table_num, duration_seconds)
+        await update_data(table_num, duration_seconds)
         logger.info(f"Successfully updated table_{table_num} with {duration_seconds} seconds from API")
 
         return {"status": "success", "message": f"Updated table_{table_num} with {duration_seconds} seconds"}
@@ -267,13 +272,12 @@ async def hello():
     }
 
 # MongoDB ulanishini yopish
-import os
 @router.on_event("shutdown")
-def shutdown_event():
+async def shutdown_event():
     client.close()
     logger.info("MongoDB connection closed")
 
 if __name__ == "__main__":
-    import uvicorn
+   
     port = int(os.getenv("PORT", 8000))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
